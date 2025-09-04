@@ -114,7 +114,7 @@ func (t *TransactionState) IsPrepared() bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	return len(t.prepares) >= 2*t.config.F()
+	return len(t.prepares) >= 2*t.config.F() && t.preprepare != nil
 }
 
 func (t *TransactionState) GetPreprepare() *pb.PrePrepareRequest {
