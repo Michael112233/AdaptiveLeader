@@ -71,6 +71,11 @@ func (s *Sender) Broadcast(method string, message proto.Message) {
 func (s *Sender) SendRPCToPeer(peerID string, method string, message proto.Message) {
 	go func() {
 		for i := 0; i < s.maxRetries; i++ {
+			if _, exists := s.otherNodes[peerID]; !exists {
+				log.WithField("peer", peerID).Error("unknown peer")
+				panic("unknown peer")
+				return
+			}
 			if err := s.sendRPCToPeer(s.otherNodes[peerID], method, message); err == nil {
 				log.WithField("method", method).WithField("peer", peerID).Debug("message sent")
 				monitoring.MessageStatusCounter.WithLabelValues(s.config.Id, peerID, method, "success").Inc()

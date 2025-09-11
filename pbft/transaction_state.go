@@ -39,7 +39,7 @@ func (t *TransactionState) AddPrePrepare(preprepare *pb.PrePrepareRequest) *Tran
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if t.digest != preprepare.RequestDigest {
+	if t.digest != preprepare.RequestDigest && t.digest != "" {
 		log.WithFields(log.Fields{"current": t.digest, "message": preprepare.RequestDigest}).Error("preprepare digest mismatch")
 		t.digest = preprepare.RequestDigest
 		for k, v := range t.prepares {

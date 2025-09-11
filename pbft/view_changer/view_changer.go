@@ -196,6 +196,7 @@ func (p *PbftViewChange) tryAnnounceAsLeader(viewId int64) {
 func (p *PbftViewChange) createPreprepareMessages(viewId int64) []*pb.PrePrepareRequest {
 	viewChanges := p.viewChanges[viewId]
 	minSeq, maxSeq := getSequenceRange(viewChanges)
+	log.WithField("min", minSeq).WithField("max", maxSeq).WithField("view", viewId).Error("sequence range for new view")
 
 	highestPrepares := extractPreprepareRequests(viewChanges, minSeq, p.config.F())
 

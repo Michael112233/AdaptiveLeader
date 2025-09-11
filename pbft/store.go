@@ -43,14 +43,15 @@ type State struct {
 }
 
 type Store struct {
-	mu                        sync.RWMutex
-	config                    *configs.Config
-	unstableCheckpoints       map[CheckpointId]*CheckpointProof
-	lastStableCheckpoint      *CheckpointProof
-	state                     *State
-	requests                  map[int64][]*pb.ClientRequest
-	lastAppliedSequenceNumber int64
-	committedRequests         map[int64][]*pb.ClientRequest
+	mu                           sync.RWMutex
+	config                       *configs.Config
+	unstableCheckpoints          map[CheckpointId]*CheckpointProof
+	lastStableCheckpoint         *CheckpointProof
+	state                        *State
+	requests                     map[int64][]*pb.ClientRequest
+	lastAppliedSequenceNumber    int64
+	lastSentResultSequenceNumber int64
+	committedRequests            map[int64][]*pb.ClientRequest
 }
 
 func NewStore(config *configs.Config) *Store {
@@ -118,24 +119,41 @@ func (s *Store) Commit(seqNo int64) ([]*pb.ClientRequest, []*pb.OperationResult,
 
 	s.committedRequests[seqNo] = s.requests[seqNo]
 
+	if s.lastAppliedSequenceNumber > seqNo {
+		monitoring.ErrorCounter.WithLabelValues("store", "commit", "skipped-seq-no").Inc()
+	}
+
+	if s.lastAppliedSequenceNumber < seqNo-100 {
+		log.WithField("seq-no", seqNo).WithField("last-applied", s.lastAppliedSequenceNumber).Error("committing a sequence number far ahead of last applied")
+	}
+
 	var reqs []*pb.ClientRequest
 	var results []*pb.OperationResult
 	var checkpoints []*pb.CheckpointRequest
 
 	for ; s.committedRequests[s.lastAppliedSequenceNumber+1] != nil; s.lastAppliedSequenceNumber++ {
-		monitoring.ExecutedRequestsGauge.WithLabelValues(s.config.Id).Set(float64(s.lastAppliedSequenceNumber))
-		requests := s.requests[s.lastAppliedSequenceNumber+1]
-		reqs = append(reqs, requests...)
+		curSeqNo := s.lastAppliedSequenceNumber + 1
+		monitoring.ExecutedRequestsGauge.WithLabelValues(s.config.Id).Set(float64(curSeqNo))
+		requests := s.requests[curSeqNo]
+
+		if curSeqNo > s.lastSentResultSequenceNumber {
+			reqs = append(reqs, requests...)
+		}
 
 		for _, req := range requests {
 			monitoring.ClientRequestLatencySummary.WithLabelValues(s.config.Id).Observe(time.Since(time.Unix(0, req.GetTimestampNs())).Seconds())
-			results = append(results, s.state.apply(req.Operation))
+			operationResult := s.state.apply(req.Operation)
+			if curSeqNo > s.lastSentResultSequenceNumber {
+				results = append(results, operationResult)
+			}
 		}
 
-		if int(s.lastAppliedSequenceNumber+1)%s.config.General.CheckpointInterval == 0 {
-			log.WithField("seq-no", s.lastAppliedSequenceNumber+1).WithField("replica", s.config.Id).Info("created checkpoint for seq-no")
+		s.lastSentResultSequenceNumber = max(s.lastSentResultSequenceNumber, curSeqNo)
+
+		if int(curSeqNo)%s.config.General.CheckpointInterval == 0 {
+			log.WithField("seq-no", curSeqNo).WithField("replica", s.config.Id).Info("created checkpoint for seq-no")
 			checkpoints = append(checkpoints, &pb.CheckpointRequest{
-				SequenceNumber: s.lastAppliedSequenceNumber + 1,
+				SequenceNumber: curSeqNo,
 				StateDigest:    []byte(s.state.digest()),
 				ReplicaId:      s.config.Id,
 			})
@@ -143,6 +161,19 @@ func (s *Store) Commit(seqNo int64) ([]*pb.ClientRequest, []*pb.OperationResult,
 	}
 
 	return reqs, results, checkpoints
+}
+
+func (s *Store) Rollback(toSeqNo int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if toSeqNo >= s.lastSentResultSequenceNumber {
+		// This needs to get information from other replicas to get state
+		s.lastSentResultSequenceNumber = toSeqNo
+	}
+
+	// This needs to rollback state as well
+	s.lastAppliedSequenceNumber = toSeqNo
 }
 
 func (s *State) digest() string {
