@@ -5,6 +5,7 @@ package pbft
 import (
 	"math"
 	"sync"
+	"time"
 
 	"github.com/Arman17Babaei/pbft/pbft/configs"
 	"github.com/Arman17Babaei/pbft/pbft/leader_election"
@@ -126,7 +127,8 @@ func (n *Node) Run() {
 				monitoring.ClientRequestStatusCounter.WithLabelValues("dropped").Inc()
 				continue
 			}
-			go n.handleClientRequest(request)
+			//go n.handleClientRequest(request)
+			n.handleClientRequest(request)
 		case input := <-n.InputCh:
 			n.handleInput(input)
 		case <-n.DisableCh:
@@ -203,13 +205,18 @@ func (n *Node) handleClientRequest(msg *pb.ClientRequest) {
 		return
 	}
 
+	if n.config.Attacks.DelayedProposal.Enabled {
+		waitTime := time.Duration(float32(n.config.Timers.ViewChangeTimeoutMs)*n.config.Attacks.DelayedProposal.WaitTimeFactor) * time.Millisecond
+		time.Sleep(waitTime)
+	}
+
 	// --- MUTEX
 	n.mu.Lock()
 	n.ViewData.LastSequenceNumber++
 	n.ViewData.InProgressRequests[n.ViewData.LastSequenceNumber] = struct{}{}
 	monitoring.InProgressRequestsGauge.WithLabelValues(n.config.Id).Set(float64(len(n.ViewData.InProgressRequests)))
 
-	prepreareMessage := &pb.PiggyBackedPrePareRequest{
+	preprepareMessage := &pb.PiggyBackedPrePareRequest{
 		PrePrepareRequest: &pb.PrePrepareRequest{
 			ViewId:         n.ViewData.CurrentView,
 			SequenceNumber: n.ViewData.LastSequenceNumber,
@@ -221,10 +228,10 @@ func (n *Node) handleClientRequest(msg *pb.ClientRequest) {
 	n.mu.Unlock()
 	// --- MUTEX
 
-	go txnState.AddPrePrepare(prepreareMessage.PrePrepareRequest).
+	go txnState.AddPrePrepare(preprepareMessage.PrePrepareRequest).
 		AddToStore(n.Store.AddRequests, []*pb.ClientRequest{msg})
 
-	n.sender.Broadcast("PrePrepare", prepreareMessage)
+	n.sender.Broadcast("PrePrepare", preprepareMessage)
 	monitoring.ClientRequestStatusCounter.WithLabelValues("success").Inc()
 }
 

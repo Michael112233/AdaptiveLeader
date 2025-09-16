@@ -15,9 +15,9 @@ type Attacks struct {
 }
 
 type DelayedProposal struct {
-	Enabled      bool   `mapstructure:"enabled"`
-	AffectedNode string `mapstructure:"affected_node"`
-	//WaitTime     int    `mapstructure:"wait_time"`
+	Enabled        bool    `mapstructure:"enabled"`
+	AffectedNode   string  `mapstructure:"affected_node"`
+	WaitTimeFactor float32 `mapstructure:"wait_time_factor"`
 }
 
 type PeriodicFailure struct {

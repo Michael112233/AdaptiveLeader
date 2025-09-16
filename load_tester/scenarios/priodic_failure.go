@@ -21,7 +21,7 @@ type PeriodicFailure struct {
 
 func (p *PeriodicFailure) PrepareScenario(loadTestConfig *configs.Config, pbftConfig *pbftconfig.Config) {
 	p.peersAddress = pbftConfig.PeersAddress
-	p.interval = time.Duration(loadTestConfig.PeriodicFailure.IntervalSeconds) * time.Second
+	p.interval = time.Duration(loadTestConfig.Attacks.PeriodicFailure.IntervalSeconds) * time.Second
 	p.nodes = make(map[string]pb.PbftClient)
 	for id, address := range p.peersAddress {
 		target := fmt.Sprintf("%s:%d", address.Host, address.Port)

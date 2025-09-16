@@ -1,7 +1,8 @@
-duration_seconds: 6000
-throughput_per_second: 1200
-num_clients: 50
+duration_seconds: 5
+throughput_per_second: 10
+num_clients: 2
 scenario: no_failure
+#scenario: delayed_proposal
 
 attacks:
   delayed_proposal:

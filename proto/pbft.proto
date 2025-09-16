@@ -69,6 +69,11 @@ message StatusResponse {
     repeated CheckpointRequest checkpoint_proof = 2;
 }
 
+message DelayedProposalRequest {
+    bool enabled = 1;  // Flag to enable/disable the attack
+    float wait_time_factor = 2;  // Factor of the view change timer that the node waits for
+}
+
 // gRPC service definition
 service Pbft {
     // Send a client request
@@ -97,4 +102,7 @@ service Pbft {
 
     // Disable node
     rpc Disable(Empty) returns (Empty);
+
+    // Enable delayed proposal attack
+    rpc EnableDelayedProposal(DelayedProposalRequest) returns (Empty);
 }

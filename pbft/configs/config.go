@@ -7,6 +7,7 @@ type Config struct {
 	Grpc         *Grpc               `mapstructure:"grpc"`
 	Timers       *Timers             `mapstructure:"timers"`
 	General      *General            `mapstructure:"general"`
+	Attacks      *Attacks            `mapstructure:"attacks"`
 }
 
 type Address struct {
@@ -30,6 +31,15 @@ type General struct {
 	MaxOutstandingRequests int  `mapstructure:"max_outstanding_requests"`
 	CheckpointInterval     int  `mapstructure:"checkpoint_interval"`
 	WaterMarkInterval      int  `mapstructure:"water_mark_interval"`
+}
+
+type Attacks struct {
+	DelayedProposal DelayedProposal `mapstructure:"delayed_proposal"`
+}
+
+type DelayedProposal struct {
+	Enabled        bool    `mapstructure:"enabled"`
+	WaitTimeFactor float32 `mapstructure:"wait_time_factor"`
 }
 
 func (c *Config) F() int {

@@ -13,4 +13,5 @@ type Scenario interface {
 var Scenarios = map[string]Scenario{
 	"no_failure":       &NoFailure{},
 	"periodic_failure": &PeriodicFailure{},
+	"delayed_proposal": &DelayedProposal{},
 }

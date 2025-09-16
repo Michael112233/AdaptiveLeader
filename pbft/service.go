@@ -192,3 +192,14 @@ func putOrIgnore[T any](channel chan<- T, value T) bool {
 		return false
 	}
 }
+
+func (s *Service) EnableDelayedProposal(_ context.Context, req *pb.DelayedProposalRequest) (*pb.Empty, error) {
+	log.WithField("my-id", s.config.Id).Info("enable delayed proposal request received")
+
+	s.config.Attacks.DelayedProposal.Enabled = req.Enabled
+	s.config.Attacks.DelayedProposal.WaitTimeFactor = req.WaitTimeFactor
+
+	monitoring.MessageCounter.WithLabelValues("load-test", s.config.Id, "enable-delayed-proposal").Inc()
+
+	return &pb.Empty{}, nil
+}
