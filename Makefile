@@ -25,14 +25,14 @@ test-raft:
 	@export PATH=$$PATH:$$(go env GOPATH)/bin
 	@cd pbft/leader_election/raft && go generate
 	@echo "Running raft tests..."
-	go test github.com/Arman17Babaei/pbft/pbft/leader_election/raft
+	timeout --preserve-status 60s go test github.com/Arman17Babaei/pbft/pbft/leader_election/raft
 
 test-paxos:
 	@echo "Generating paxos mock files..."
 	@export PATH=$$PATH:$$(go env GOPATH)/bin
 	@cd pbft/leader_election/paxos && go generate
 	@echo "Running paxos tests..."
-	go test github.com/Arman17Babaei/pbft/pbft/leader_election/paxos
+	timeout --preserve-status 30s go test github.com/Arman17Babaei/pbft/pbft/leader_election/paxos
 
 generate:
 	@echo "Generating all mock files..."

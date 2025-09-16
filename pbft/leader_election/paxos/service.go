@@ -58,7 +58,7 @@ func (s *Service) PaxosPrepare(_ context.Context, req *pb.PaxosPrepareRequest) (
 		WithField("term", req.Term).
 		WithField("proposal-id", req.ProposalId).
 		WithField("proposer-id", req.ProposerId).
-		Debug("paxos prepare request received")
+		Info("paxos prepare request received")
 
 	// Forward the request to the election logic
 	s.paxosCh <- req
@@ -77,7 +77,7 @@ func (s *Service) PaxosPromise(_ context.Context, req *pb.PaxosPromiseRequest) (
 		WithField("term", req.Term).
 		WithField("promised", req.Promised).
 		WithField("acceptor-id", req.AcceptorId).
-		Debug("paxos promise request received")
+		Info("paxos promise request received")
 
 	// Forward the request to the election logic
 	s.paxosCh <- req
@@ -97,7 +97,7 @@ func (s *Service) PaxosAccept(_ context.Context, req *pb.PaxosAcceptRequest) (*p
 		WithField("proposal-id", req.ProposalId).
 		WithField("proposer-id", req.ProposerId).
 		WithField("proposed-value", req.ProposedValue).
-		Debug("paxos accept request received")
+		Info("paxos accept request received")
 
 	// Forward the request to the election logic
 	s.paxosCh <- req
@@ -116,7 +116,7 @@ func (s *Service) PaxosSuccess(_ context.Context, req *pb.PaxosSuccessRequest) (
 		WithField("term", req.Term).
 		WithField("success", req.Success).
 		WithField("acceptor-id", req.AcceptorId).
-		Debug("paxos success request received")
+		Info("paxos success request received")
 
 	// Forward the request to the election logic
 	s.paxosCh <- req

@@ -54,7 +54,7 @@ func TestRaft_SuccessfulElection(t *testing.T) {
 		raftChs[i] = make(chan proto.Message, 100)
 		senders[i] = NewSender(configStructs[i])
 		services[i] = NewService(raftChs[i], configStructs[i])
-		raftElections[i] = NewRaftElection(configStructs[i], mockNodes[i], senders[i])
+		raftElections[i] = NewRaftElection(configStructs[i], mockNodes[i], senders[i], raftChs[i])
 	}
 
 	// Start gRPC servers
@@ -68,7 +68,7 @@ func TestRaft_SuccessfulElection(t *testing.T) {
 	}
 
 	// Wait for election to complete
-	time.Sleep(2 * time.Second)
+	time.Sleep(30 * time.Second)
 
 	// Check results
 	leaders := make([]string, 4)

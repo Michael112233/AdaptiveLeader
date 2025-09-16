@@ -160,6 +160,7 @@ func (p *PaxosElection) handlePrepareRequest(req *pb.PaxosPrepareRequest) {
 	// Update term if request has higher term
 	if req.Term > p.currentTerm {
 		p.currentTerm = req.Term
+		p.currentViewLeader = "" // Clear current leader when term changes
 		p.isLeader = false
 		p.isCandidate = false
 	} else if req.Term < p.currentTerm {
@@ -173,7 +174,7 @@ func (p *PaxosElection) handlePrepareRequest(req *pb.PaxosPrepareRequest) {
 			LastAcceptedValue:      p.acceptedValue,
 			Timestamp:              time.Now().Unix(),
 		}
-		p.sender.SendRPCToPeer(req.ProposerId, "PaxosPromise", response)
+		p.sender.SendRPCToPeer(req.ProposerId, "paxos-promise", response)
 
 		log.WithField("node-id", p.config.Id).
 			WithField("term", req.Term).
@@ -204,7 +205,7 @@ func (p *PaxosElection) handlePrepareRequest(req *pb.PaxosPrepareRequest) {
 			p.prepareRequests[p.currentTerm] = make(map[string]*pb.PaxosPrepareRequest)
 		}
 		p.prepareRequests[p.currentTerm][req.ProposerId] = req
-		p.sender.SendRPCToPeer(req.ProposerId, "PaxosPromise", response)
+		p.sender.SendRPCToPeer(req.ProposerId, "paxos-promise", response)
 
 		log.WithField("node-id", p.config.Id).
 			WithField("term", req.Term).
@@ -222,7 +223,7 @@ func (p *PaxosElection) handlePrepareRequest(req *pb.PaxosPrepareRequest) {
 			Timestamp:              time.Now().Unix(),
 		}
 
-		p.sender.SendRPCToPeer(req.ProposerId, "PaxosPromise", response)
+		p.sender.SendRPCToPeer(req.ProposerId, "paxos-promise", response)
 		log.WithField("node-id", p.config.Id).
 			WithField("term", req.Term).
 			WithField("proposal-id", req.ProposalId).
@@ -299,6 +300,8 @@ func (p *PaxosElection) handleAcceptRequest(req *pb.PaxosAcceptRequest) {
 
 	// 1. higer term request change the node to acceptor
 	if req.Term > p.currentTerm {
+		p.currentTerm = req.Term
+		p.currentViewLeader = "" // Clear current leader when term changes
 		p.isCandidate = false
 		p.isLeader = false
 	}
@@ -327,7 +330,7 @@ func (p *PaxosElection) handleAcceptRequest(req *pb.PaxosAcceptRequest) {
 			Timestamp:  time.Now().Unix(),
 		}
 
-		p.sender.SendRPCToPeer(req.ProposerId, "PaxosSuccess", response)
+		p.sender.SendRPCToPeer(req.ProposerId, "paxos-success", response)
 
 		log.WithField("node-id", p.config.Id).
 			WithField("term", req.Term).
@@ -350,7 +353,7 @@ func (p *PaxosElection) handleAcceptRequest(req *pb.PaxosAcceptRequest) {
 			ViewId:     p.currentView,
 			Timestamp:  time.Now().Unix(),
 		}
-		p.sender.SendRPCToPeer(req.ProposerId, "PaxosAccept", response)
+		p.sender.SendRPCToPeer(req.ProposerId, "paxos-success", response)
 
 		log.WithField("node-id", p.config.Id).
 			WithField("term", req.Term).
@@ -372,6 +375,7 @@ func (p *PaxosElection) handleSuccessResponse(resp *pb.PaxosSuccessRequest) {
 	if p.currentTerm < resp.Term {
 		p.successRequests[p.currentTerm] = nil
 		p.currentTerm = resp.Term
+		p.currentViewLeader = "" // Clear current leader when term changes
 		p.isLeader = false
 		p.isCandidate = false
 
@@ -412,8 +416,9 @@ func (p *PaxosElection) handleSuccessResponse(resp *pb.PaxosSuccessRequest) {
 		if p.isCandidate && len(p.successRequests[p.currentTerm]) >= p.getMajority() {
 			log.WithField("node-id", p.config.Id).
 				WithField("term", resp.Term).
-				Debug("Becoming leader")
+				Info("Becoming leader")
 			p.NewLeader = p.config.Id
+			p.currentViewLeader = p.config.Id
 			p.isLeader = true
 			p.isCandidate = false
 			p.NewLeaderCh <- p.config.Id
@@ -481,7 +486,8 @@ func (p *PaxosElection) runElectionManager() {
 	for {
 		select {
 		case <-p.NewLeaderCh:
-			p.startElection()
+			// Leader elected, reset timer for next election
+			p.electionTimer.Reset(p.electionTimeout)
 		case <-p.electionTimer.C:
 			p.startElection()
 			p.electionTimer.Reset(p.electionTimeout)
@@ -519,12 +525,32 @@ func (p *PaxosElection) FindLeaderForView(viewId int64, callbackCh chan string) 
 	// Otherwise start a new election
 	go func() {
 		p.startElection()
-		// Wait for election result
+
+		// Wait for election result with a longer timeout
+		// Use a separate channel to avoid competition
+		waitCh := make(chan string, 1)
+
+		// Start a goroutine to wait for leader election
+		go func() {
+			select {
+			case leader := <-p.NewLeaderCh:
+				waitCh <- leader
+			case <-time.After(p.electionTimeout * 2): // Double the timeout
+				waitCh <- "timeout"
+			}
+		}()
+
+		// Wait for the result
 		select {
-		case leader := <-p.NewLeaderCh:
+		case leader := <-waitCh:
 			callbackCh <- leader
-		case <-time.After(p.electionTimeout):
-			callbackCh <- "timeout"
+		case <-time.After(p.electionTimeout * 3): // Triple timeout as fallback
+			// If timeout, check if we know any leader
+			if p.currentViewLeader != "" {
+				callbackCh <- p.currentViewLeader
+			} else {
+				callbackCh <- "timeout"
+			}
 		}
 	}()
 }

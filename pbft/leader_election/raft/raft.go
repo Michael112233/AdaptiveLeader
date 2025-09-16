@@ -63,7 +63,7 @@ type RaftElection struct {
 }
 
 // NewRaftElection creates a new Raft election instance
-func NewRaftElection(config *configs.Config, node Node, sender *Sender) *RaftElection {
+func NewRaftElection(config *configs.Config, node Node, sender *Sender, raftCh <-chan proto.Message) *RaftElection {
 	electionTimeout := time.Duration(config.Timers.ViewChangeTimeoutMs) * time.Millisecond
 
 	// 初始化随机数种子
@@ -88,6 +88,7 @@ func NewRaftElection(config *configs.Config, node Node, sender *Sender) *RaftEle
 		isCandidate:      false,
 		NewLeaderCh:      make(chan string, 10),
 		leaderElectionCh: make(chan struct{}, 10),
+		raftCh:           raftCh,
 		stopCh:           make(chan struct{}),
 
 		electionTimeout: electionTimeout,
@@ -154,11 +155,16 @@ func (p *RaftElection) handleRaftPrepareRequest(req *pb.RaftPrepareRequest) {
 	log.WithField("node-id", p.config.Id).
 		WithField("term", req.Term).
 		WithField("proposal-id", req.ProposalId).
-		Debug("Handling raft-prepare request")
+		Info("Handling raft-prepare request")
 
 	// Update term if request has higher term
 	if req.Term > p.currentTerm {
+		log.WithField("node-id", p.config.Id).
+			WithField("req-term", req.Term).
+			WithField("current-term", p.currentTerm).
+			Info("Received higher term, updating")
 		p.currentTerm = req.Term
+		p.currentViewLeader = "" // Clear current leader when term changes
 		p.isLeader = false
 		p.isCandidate = false
 	} else if req.Term < p.currentTerm {
@@ -172,7 +178,7 @@ func (p *RaftElection) handleRaftPrepareRequest(req *pb.RaftPrepareRequest) {
 			LastAcceptedValue:      p.acceptedValue,
 			Timestamp:              time.Now().Unix(),
 		}
-		p.sender.SendRPCToPeer(req.ProposerId, "RaftPromise", response)
+		p.sender.SendRPCToPeer(req.ProposerId, "raft-promise", response)
 
 		log.WithField("node-id", p.config.Id).
 			WithField("term", req.Term).
@@ -183,10 +189,17 @@ func (p *RaftElection) handleRaftPrepareRequest(req *pb.RaftPrepareRequest) {
 
 	// Accept prepare if proposal ID is higher
 	if req.ProposalId > p.maxProposalId {
+		log.WithField("node-id", p.config.Id).
+			WithField("req-proposal-id", req.ProposalId).
+			WithField("max-proposal-id", p.maxProposalId).
+			WithField("req-proposer", req.ProposerId).
+			Info("Received higher proposal ID")
+
 		p.maxProposalId = req.ProposalId
 
 		p.isLeader = false
-		p.isCandidate = false
+		// In Raft, we don't stop being candidate based on proposal ID
+		// Only term matters for candidate status
 
 		// Send prepare response
 		response := &pb.RaftPromiseRequest{
@@ -203,7 +216,7 @@ func (p *RaftElection) handleRaftPrepareRequest(req *pb.RaftPrepareRequest) {
 			p.prepareRequests[p.currentTerm] = make(map[string]*pb.RaftPrepareRequest)
 		}
 		p.prepareRequests[p.currentTerm][req.ProposerId] = req
-		p.sender.SendRPCToPeer(req.ProposerId, "RaftPromise", response)
+		p.sender.SendRPCToPeer(req.ProposerId, "raft-promise", response)
 
 		log.WithField("node-id", p.config.Id).
 			WithField("term", req.Term).
@@ -221,7 +234,7 @@ func (p *RaftElection) handleRaftPrepareRequest(req *pb.RaftPrepareRequest) {
 			Timestamp:              time.Now().Unix(),
 		}
 
-		p.sender.SendRPCToPeer(req.ProposerId, "RaftPromise", response)
+		p.sender.SendRPCToPeer(req.ProposerId, "raft-promise", response)
 		log.WithField("node-id", p.config.Id).
 			WithField("term", req.Term).
 			WithField("proposal-id", req.ProposalId).
@@ -236,7 +249,7 @@ func (p *RaftElection) handleRaftPromiseResponse(resp *pb.RaftPromiseRequest) {
 
 	log.WithField("node-id", p.config.Id).
 		WithField("term", resp.Term).
-		Debug("Handling raft-promise response")
+		Info("Handling raft-promise response")
 
 	// if node is not trying to be a leader or request is not for the current term
 	// skip the response
@@ -255,7 +268,10 @@ func (p *RaftElection) handleRaftPromiseResponse(resp *pb.RaftPromiseRequest) {
 	if !p.isCandidate || p.currentTerm != resp.Term || !resp.Promised {
 		log.WithField("node-id", p.config.Id).
 			WithField("term", resp.Term).
-			Debug("Skip Wrong Raft-Promise Response")
+			WithField("isCandidate", p.isCandidate).
+			WithField("currentTerm", p.currentTerm).
+			WithField("promised", resp.Promised).
+			Info("Skip Wrong Raft-Promise Response")
 		return
 	}
 
@@ -268,6 +284,12 @@ func (p *RaftElection) handleRaftPromiseResponse(resp *pb.RaftPromiseRequest) {
 
 	// if got majority of promise, start the accept phase
 	if len(p.promiseResponses[p.currentTerm]) >= p.getMajority() {
+		log.WithField("node-id", p.config.Id).
+			WithField("term", p.currentTerm).
+			WithField("promise-count", len(p.promiseResponses[p.currentTerm])).
+			WithField("majority", p.getMajority()).
+			Info("Got majority of promises, starting accept phase")
+
 		p.acceptedProposalId = p.maxProposalId
 		p.acceptedValue = p.config.Id
 
@@ -326,7 +348,7 @@ func (p *RaftElection) handleRaftAcceptRequest(req *pb.RaftAcceptRequest) {
 			Timestamp:  time.Now().Unix(),
 		}
 
-		p.sender.SendRPCToPeer(req.ProposerId, "RaftAccept", response)
+		p.sender.SendRPCToPeer(req.ProposerId, "raft-success", response)
 
 		log.WithField("node-id", p.config.Id).
 			WithField("term", req.Term).
@@ -349,7 +371,7 @@ func (p *RaftElection) handleRaftAcceptRequest(req *pb.RaftAcceptRequest) {
 			ViewId:     p.currentView,
 			Timestamp:  time.Now().Unix(),
 		}
-		p.sender.SendRPCToPeer(req.ProposerId, "RaftAccept", response)
+		p.sender.SendRPCToPeer(req.ProposerId, "raft-success", response)
 
 		log.WithField("node-id", p.config.Id).
 			WithField("term", req.Term).
@@ -389,6 +411,11 @@ func (p *RaftElection) handleRaftSuccessResponse(resp *pb.RaftSuccessRequest) {
 		p.mu.Unlock()
 		return
 	}
+
+	// Initialize the map if it doesn't exist
+	if p.successRequests[p.currentTerm] == nil {
+		p.successRequests[p.currentTerm] = make(map[string]*pb.RaftSuccessRequest)
+	}
 	p.successRequests[p.currentTerm][resp.AcceptorId] = resp
 	p.mu.Unlock()
 
@@ -408,8 +435,9 @@ func (p *RaftElection) handleRaftSuccessResponse(resp *pb.RaftSuccessRequest) {
 		if p.isCandidate && len(p.successRequests[p.currentTerm]) >= p.getMajority() {
 			log.WithField("node-id", p.config.Id).
 				WithField("term", resp.Term).
-				Debug("Becoming leader")
+				Info("Becoming leader")
 			p.NewLeader = p.config.Id
+			p.currentViewLeader = p.config.Id
 			p.isLeader = true
 			p.isCandidate = false
 			p.NewLeaderCh <- p.config.Id
@@ -477,7 +505,8 @@ func (p *RaftElection) runElectionManager() {
 	for {
 		select {
 		case <-p.NewLeaderCh:
-			p.startElection()
+			// Leader elected, reset timer for next election
+			p.electionTimer.Reset(p.electionTimeout)
 		case <-p.electionTimer.C:
 			p.startElection()
 			p.electionTimer.Reset(p.electionTimeout)
@@ -515,12 +544,32 @@ func (p *RaftElection) FindLeaderForView(viewId int64, callbackCh chan string) {
 	// Otherwise start a new election
 	go func() {
 		p.startElection()
-		// Wait for election result
+
+		// Wait for election result with a longer timeout
+		// Use a separate channel to avoid competition
+		waitCh := make(chan string, 1)
+
+		// Start a goroutine to wait for leader election
+		go func() {
+			select {
+			case leader := <-p.NewLeaderCh:
+				waitCh <- leader
+			case <-time.After(p.electionTimeout * 2): // Double the timeout
+				waitCh <- ""
+			}
+		}()
+
+		// Wait for the result
 		select {
-		case leader := <-p.NewLeaderCh:
+		case leader := <-waitCh:
 			callbackCh <- leader
-		case <-time.After(p.electionTimeout):
-			callbackCh <- ""
+		case <-time.After(p.electionTimeout * 3): // Triple timeout as fallback
+			// If timeout, check if we know any leader
+			if p.currentViewLeader != "" {
+				callbackCh <- p.currentViewLeader
+			} else {
+				callbackCh <- ""
+			}
 		}
 	}()
 }

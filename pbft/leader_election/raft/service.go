@@ -58,7 +58,7 @@ func (s *Service) RaftPrepare(_ context.Context, req *pb.RaftPrepareRequest) (*p
 		WithField("term", req.Term).
 		WithField("proposal-id", req.ProposalId).
 		WithField("proposer-id", req.ProposerId).
-		Debug("paxos prepare request received")
+		Info("raft prepare request received")
 
 	// Forward the request to the election logic
 	s.raftCh <- req
@@ -77,7 +77,7 @@ func (s *Service) RaftPromise(_ context.Context, req *pb.RaftPromiseRequest) (*p
 		WithField("term", req.Term).
 		WithField("promised", req.Promised).
 		WithField("acceptor-id", req.AcceptorId).
-		Debug("raft promise request received")
+		Info("raft promise request received")
 
 	// Forward the request to the election logic
 	s.raftCh <- req
@@ -97,7 +97,7 @@ func (s *Service) RaftAccept(_ context.Context, req *pb.RaftAcceptRequest) (*pb.
 		WithField("proposal-id", req.ProposalId).
 		WithField("proposer-id", req.ProposerId).
 		WithField("proposed-value", req.ProposedValue).
-		Debug("raft accept request received")
+		Info("raft accept request received")
 
 	// Forward the request to the election logic
 	s.raftCh <- req
@@ -116,7 +116,7 @@ func (s *Service) RaftSuccess(_ context.Context, req *pb.RaftSuccessRequest) (*p
 		WithField("term", req.Term).
 		WithField("success", req.Success).
 		WithField("acceptor-id", req.AcceptorId).
-		Debug("raft success request received")
+		Info("raft success request received")
 
 	// Forward the request to the election logic
 	s.raftCh <- req
