@@ -7,7 +7,7 @@ type Config struct {
 	Grpc         *Grpc               `mapstructure:"grpc"`
 	Timers       *Timers             `mapstructure:"timers"`
 	General      *General            `mapstructure:"general"`
-	Attacks      *Attacks            `mapstructure:"attacks"`
+	Attacks      Attacks             `mapstructure:"attacks"`
 }
 
 type Address struct {
