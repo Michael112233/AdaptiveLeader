@@ -127,8 +127,8 @@ func (n *Node) Run() {
 				monitoring.ClientRequestStatusCounter.WithLabelValues("dropped").Inc()
 				continue
 			}
-			//go n.handleClientRequest(request)
-			n.handleClientRequest(request)
+			go n.handleClientRequest(request)
+			//n.handleClientRequest(request)
 		case input := <-n.InputCh:
 			n.handleInput(input)
 		case <-n.DisableCh:

@@ -1,13 +1,13 @@
 duration_seconds: 5
-throughput_per_second: 10
-num_clients: 2
-scenario: no_failure
-#scenario: delayed_proposal
+throughput_per_second: 100
+num_clients: 10
+#scenario: no_failure
+scenario: delayed_proposal
 
 attacks:
   delayed_proposal:
-    enabled: true
     affected_node: node_0
+    wait_time_factor: 0.5
   
   periodic_failure:
     interval_seconds: 60

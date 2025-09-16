@@ -45,3 +45,6 @@ general:
   max_outstanding_requests: 8000
   checkpoint_interval: 2000
   water_mark_interval: 10000
+
+attacks:
+  enabled: false
