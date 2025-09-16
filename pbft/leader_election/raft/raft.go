@@ -1,6 +1,6 @@
-package paxos
+package raft
 
-//go:generate mockgen -source=paxos.go -destination=paxos_mock.go -package=paxos
+//go:generate mockgen -source=raft.go -destination=raft_mock.go -package=raft
 
 import (
 	"fmt"
@@ -15,22 +15,22 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Node interface defines the methods that Paxos election needs from the main node
+// Node interface defines the methods that Raft election needs from the main node
 type Node interface {
 	GetCurrentView() int64
 	GetCurrentViewLeader() string
 }
 
-// PaxosElection implements the Paxos consensus algorithm for leader election
-// It manages the Prepare, Accept, and Learn phases of the Paxos protocol
-type PaxosElection struct {
+// RaftElection implements the Raft consensus algorithm for leader election
+// It manages the Prepare, Accept, and Learn phases of the Raft protocol
+type RaftElection struct {
 	mu sync.RWMutex
 
 	config *configs.Config
 	node   Node
 	sender *Sender
 
-	// Paxos state variables
+	// Raft state variables
 	currentView        int64
 	currentViewLeader  string
 	currentTerm        int64
@@ -48,7 +48,7 @@ type PaxosElection struct {
 
 	// Message handling
 	leaderElectionCh chan struct{}
-	paxosCh          <-chan proto.Message
+	raftCh           <-chan proto.Message
 	stopCh           chan struct{}
 
 	// Timeout control
@@ -56,24 +56,23 @@ type PaxosElection struct {
 	electionTimer   *time.Timer
 
 	// Response tracking
-	prepareRequests  map[int64]map[string]*pb.PaxosPrepareRequest
-	promiseResponses map[int64]map[string]*pb.PaxosPromiseRequest
-	acceptRequests   map[int64]map[string]*pb.PaxosAcceptRequest
-	successRequests  map[int64]map[string]*pb.PaxosSuccessRequest
+	prepareRequests  map[int64]map[string]*pb.RaftPrepareRequest
+	promiseResponses map[int64]map[string]*pb.RaftPromiseRequest
+	acceptRequests   map[int64]map[string]*pb.RaftAcceptRequest
+	successRequests  map[int64]map[string]*pb.RaftSuccessRequest
 }
 
-// NewPaxosElection creates a new Paxos election instance
-func NewPaxosElection(config *configs.Config, node Node, sender *Sender, paxosCh <-chan proto.Message) *PaxosElection {
+// NewRaftElection creates a new Raft election instance
+func NewRaftElection(config *configs.Config, node Node, sender *Sender) *RaftElection {
 	electionTimeout := time.Duration(config.Timers.ViewChangeTimeoutMs) * time.Millisecond
 
 	// 初始化随机数种子
 	rand.Seed(time.Now().UnixNano())
 
-	return &PaxosElection{
-		config:  config,
-		node:    node,
-		sender:  sender,
-		paxosCh: paxosCh,
+	return &RaftElection{
+		config: config,
+		node:   node,
+		sender: sender,
 
 		currentView:        node.GetCurrentView(),
 		currentViewLeader:  node.GetCurrentViewLeader(),
@@ -94,14 +93,14 @@ func NewPaxosElection(config *configs.Config, node Node, sender *Sender, paxosCh
 		electionTimeout: electionTimeout,
 		electionTimer:   time.NewTimer(electionTimeout),
 
-		prepareRequests:  make(map[int64]map[string]*pb.PaxosPrepareRequest),
-		promiseResponses: make(map[int64]map[string]*pb.PaxosPromiseRequest),
-		acceptRequests:   make(map[int64]map[string]*pb.PaxosAcceptRequest),
-		successRequests:  make(map[int64]map[string]*pb.PaxosSuccessRequest),
+		prepareRequests:  make(map[int64]map[string]*pb.RaftPrepareRequest),
+		promiseResponses: make(map[int64]map[string]*pb.RaftPromiseRequest),
+		acceptRequests:   make(map[int64]map[string]*pb.RaftAcceptRequest),
+		successRequests:  make(map[int64]map[string]*pb.RaftSuccessRequest),
 	}
 }
 
-func (p *PaxosElection) UpdatePaxosElection(node Node) {
+func (p *RaftElection) UpdateRaftElection(node Node) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -109,15 +108,15 @@ func (p *PaxosElection) UpdatePaxosElection(node Node) {
 	p.currentViewLeader = node.GetCurrentViewLeader()
 }
 
-func (p *PaxosElection) StartElection() {
+func (p *RaftElection) StartElection() {
 	p.leaderElectionCh <- struct{}{}
 }
 
-// runMessageHandler processes incoming Paxos messages
-func (p *PaxosElection) runMessageHandler() {
+// runMessageHandler processes incoming Raft messages
+func (p *RaftElection) runMessageHandler() {
 	for {
 		select {
-		case msg := <-p.paxosCh:
+		case msg := <-p.raftCh:
 			p.handleMessage(msg)
 		case <-p.stopCh:
 			return
@@ -125,37 +124,37 @@ func (p *PaxosElection) runMessageHandler() {
 	}
 }
 
-// handleMessage routes different types of Paxos messages to appropriate handlers
-func (p *PaxosElection) handleMessage(msg proto.Message) {
+// handleMessage routes different types of Raft messages to appropriate handlers
+func (p *RaftElection) handleMessage(msg proto.Message) {
 	// 1. Recording the time of the message
 	startTime := time.Now()
-	timer := monitoring.ResponseTimeSummary.WithLabelValues(p.config.Id, "paxos-message")
+	timer := monitoring.ResponseTimeSummary.WithLabelValues(p.config.Id, "raft-message")
 	defer timer.Observe(time.Since(startTime).Seconds())
 
 	// 2. Routing the message to the appropriate handler
 	switch m := msg.(type) {
-	case *pb.PaxosPrepareRequest:
-		p.handlePrepareRequest(m)
-	case *pb.PaxosPromiseRequest:
-		p.handlePromiseResponse(m)
-	case *pb.PaxosAcceptRequest:
-		p.handleAcceptRequest(m)
-	case *pb.PaxosSuccessRequest:
-		p.handleSuccessResponse(m)
+	case *pb.RaftPrepareRequest:
+		p.handleRaftPrepareRequest(m)
+	case *pb.RaftPromiseRequest:
+		p.handleRaftPromiseResponse(m)
+	case *pb.RaftAcceptRequest:
+		p.handleRaftAcceptRequest(m)
+	case *pb.RaftSuccessRequest:
+		p.handleRaftSuccessResponse(m)
 	default:
-		log.WithField("message-type", fmt.Sprintf("%T", msg)).Warn("Unknown paxos message type")
+		log.WithField("message-type", fmt.Sprintf("%T", msg)).Warn("Unknown raft message type")
 	}
 }
 
 // handlePrepareRequest processes incoming Prepare phase requests
-func (p *PaxosElection) handlePrepareRequest(req *pb.PaxosPrepareRequest) {
+func (p *RaftElection) handleRaftPrepareRequest(req *pb.RaftPrepareRequest) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	log.WithField("node-id", p.config.Id).
 		WithField("term", req.Term).
 		WithField("proposal-id", req.ProposalId).
-		Info("Handling paxos-prepare request")
+		Debug("Handling raft-prepare request")
 
 	// Update term if request has higher term
 	if req.Term > p.currentTerm {
@@ -164,7 +163,7 @@ func (p *PaxosElection) handlePrepareRequest(req *pb.PaxosPrepareRequest) {
 		p.isCandidate = false
 	} else if req.Term < p.currentTerm {
 		// Reject prepare
-		response := &pb.PaxosPromiseRequest{
+		response := &pb.RaftPromiseRequest{
 			Term:                   p.currentTerm,
 			Promised:               false,
 			AcceptorId:             p.config.Id,
@@ -173,12 +172,12 @@ func (p *PaxosElection) handlePrepareRequest(req *pb.PaxosPrepareRequest) {
 			LastAcceptedValue:      p.acceptedValue,
 			Timestamp:              time.Now().Unix(),
 		}
-		p.sender.SendRPCToPeer(req.ProposerId, "PaxosPromise", response)
+		p.sender.SendRPCToPeer(req.ProposerId, "RaftPromise", response)
 
 		log.WithField("node-id", p.config.Id).
 			WithField("term", req.Term).
 			WithField("proposal-id", req.ProposalId).
-			Debug("Wrong Paxos-Prepare, Rejected")
+			Debug("Wrong Raft-Prepare, Rejected")
 		return
 	}
 
@@ -190,7 +189,7 @@ func (p *PaxosElection) handlePrepareRequest(req *pb.PaxosPrepareRequest) {
 		p.isCandidate = false
 
 		// Send prepare response
-		response := &pb.PaxosPromiseRequest{
+		response := &pb.RaftPromiseRequest{
 			Term:                   p.currentTerm,
 			Promised:               true,
 			AcceptorId:             p.config.Id,
@@ -201,18 +200,18 @@ func (p *PaxosElection) handlePrepareRequest(req *pb.PaxosPrepareRequest) {
 		}
 
 		if p.prepareRequests[p.currentTerm] == nil {
-			p.prepareRequests[p.currentTerm] = make(map[string]*pb.PaxosPrepareRequest)
+			p.prepareRequests[p.currentTerm] = make(map[string]*pb.RaftPrepareRequest)
 		}
 		p.prepareRequests[p.currentTerm][req.ProposerId] = req
-		p.sender.SendRPCToPeer(req.ProposerId, "PaxosPromise", response)
+		p.sender.SendRPCToPeer(req.ProposerId, "RaftPromise", response)
 
 		log.WithField("node-id", p.config.Id).
 			WithField("term", req.Term).
 			WithField("proposal-id", req.ProposalId).
-			Debug("Sending Paxos-Promise")
+			Debug("Sending Raft-Promise")
 	} else {
 		// Reject prepare
-		response := &pb.PaxosPromiseRequest{
+		response := &pb.RaftPromiseRequest{
 			Term:                   p.currentTerm,
 			Promised:               false,
 			AcceptorId:             p.config.Id,
@@ -222,22 +221,22 @@ func (p *PaxosElection) handlePrepareRequest(req *pb.PaxosPrepareRequest) {
 			Timestamp:              time.Now().Unix(),
 		}
 
-		p.sender.SendRPCToPeer(req.ProposerId, "PaxosPromise", response)
+		p.sender.SendRPCToPeer(req.ProposerId, "RaftPromise", response)
 		log.WithField("node-id", p.config.Id).
 			WithField("term", req.Term).
 			WithField("proposal-id", req.ProposalId).
-			Debug("Sending Reject Paxos-Prepare")
+			Debug("Sending Reject Raft-Prepare")
 	}
 }
 
 // handlePrepareResponse processes Prepare phase responses
-func (p *PaxosElection) handlePromiseResponse(resp *pb.PaxosPromiseRequest) {
+func (p *RaftElection) handleRaftPromiseResponse(resp *pb.RaftPromiseRequest) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	log.WithField("node-id", p.config.Id).
 		WithField("term", resp.Term).
-		Info("Handling paxos-promise response")
+		Debug("Handling raft-promise response")
 
 	// if node is not trying to be a leader or request is not for the current term
 	// skip the response
@@ -249,20 +248,20 @@ func (p *PaxosElection) handlePromiseResponse(resp *pb.PaxosPromiseRequest) {
 
 		log.WithField("node-id", p.config.Id).
 			WithField("term", resp.Term).
-			Debug("Skip Wrong Paxos-Promise Response (Term is lower)")
+			Debug("Skip Wrong Raft-Promise Response (Term is lower)")
 		return
 	}
 
 	if !p.isCandidate || p.currentTerm != resp.Term || !resp.Promised {
 		log.WithField("node-id", p.config.Id).
 			WithField("term", resp.Term).
-			Debug("Skip Wrong Paxos-Promise Response")
+			Debug("Skip Wrong Raft-Promise Response")
 		return
 	}
 
 	// Recording the response
 	if p.promiseResponses[p.currentTerm] == nil {
-		p.promiseResponses[p.currentTerm] = make(map[string]*pb.PaxosPromiseRequest)
+		p.promiseResponses[p.currentTerm] = make(map[string]*pb.RaftPromiseRequest)
 	}
 
 	p.promiseResponses[p.currentTerm][resp.AcceptorId] = resp
@@ -272,7 +271,7 @@ func (p *PaxosElection) handlePromiseResponse(resp *pb.PaxosPromiseRequest) {
 		p.acceptedProposalId = p.maxProposalId
 		p.acceptedValue = p.config.Id
 
-		p.sender.Broadcast("paxos-accept", &pb.PaxosAcceptRequest{
+		p.sender.Broadcast("raft-accept", &pb.RaftAcceptRequest{
 			Term:          p.currentTerm,
 			ProposalId:    p.maxProposalId,
 			ProposerId:    p.config.Id,
@@ -284,12 +283,12 @@ func (p *PaxosElection) handlePromiseResponse(resp *pb.PaxosPromiseRequest) {
 		log.WithField("node-id", p.config.Id).
 			WithField("term", p.currentTerm).
 			WithField("proposal-id", p.maxProposalId).
-			Debug("Broadcasting Paxos-Accept Request")
+			Debug("Broadcasting Raft-Accept Request")
 	}
 }
 
 // handleAcceptRequest processes incoming Accept phase requests
-func (p *PaxosElection) handleAcceptRequest(req *pb.PaxosAcceptRequest) {
+func (p *RaftElection) handleRaftAcceptRequest(req *pb.RaftAcceptRequest) {
 	p.mu.Lock()
 
 	log.WithField("node-id", p.config.Id).
@@ -319,7 +318,7 @@ func (p *PaxosElection) handleAcceptRequest(req *pb.PaxosAcceptRequest) {
 		p.acceptedValue = req.ProposedValue
 
 		// Send success response
-		response := &pb.PaxosSuccessRequest{
+		response := &pb.RaftSuccessRequest{
 			Term:       p.currentTerm,
 			Success:    true,
 			AcceptorId: p.config.Id,
@@ -327,12 +326,12 @@ func (p *PaxosElection) handleAcceptRequest(req *pb.PaxosAcceptRequest) {
 			Timestamp:  time.Now().Unix(),
 		}
 
-		p.sender.SendRPCToPeer(req.ProposerId, "PaxosSuccess", response)
+		p.sender.SendRPCToPeer(req.ProposerId, "RaftAccept", response)
 
 		log.WithField("node-id", p.config.Id).
 			WithField("term", req.Term).
 			WithField("proposal-id", req.ProposalId).
-			Debug("Sending Paxos-Success Response")
+			Debug("Sending Raft-Success Response")
 
 		// Set the new leader
 		// p.NewLeader = req.ProposerId
@@ -343,30 +342,30 @@ func (p *PaxosElection) handleAcceptRequest(req *pb.PaxosAcceptRequest) {
 		// p.NewLeaderCh <- p.NewLeader
 	} else {
 		// Reject accept
-		response := &pb.PaxosSuccessRequest{
+		response := &pb.RaftSuccessRequest{
 			Term:       p.currentTerm,
 			Success:    false,
 			AcceptorId: p.config.Id,
 			ViewId:     p.currentView,
 			Timestamp:  time.Now().Unix(),
 		}
-		p.sender.SendRPCToPeer(req.ProposerId, "PaxosAccept", response)
+		p.sender.SendRPCToPeer(req.ProposerId, "RaftAccept", response)
 
 		log.WithField("node-id", p.config.Id).
 			WithField("term", req.Term).
 			WithField("proposal-id", req.ProposalId).
-			Debug("Rejecting Accept Request")
+			Debug("Rejecting Raft-Accept Request")
 		p.mu.Unlock()
 	}
 }
 
 // handleAcceptResponse processes Accept phase responses
-func (p *PaxosElection) handleSuccessResponse(resp *pb.PaxosSuccessRequest) {
+func (p *RaftElection) handleRaftSuccessResponse(resp *pb.RaftSuccessRequest) {
 	p.mu.Lock()
 
 	log.WithField("node-id", p.config.Id).
 		WithField("term", resp.Term).
-		Debug("Handling accept request")
+		Debug("Handling raft-success request")
 
 	// if term is lower, skip the response and become acceptor
 	if p.currentTerm < resp.Term {
@@ -377,7 +376,7 @@ func (p *PaxosElection) handleSuccessResponse(resp *pb.PaxosSuccessRequest) {
 
 		log.WithField("node-id", p.config.Id).
 			WithField("term", resp.Term).
-			Debug("Skip Wrong Paxos-Success Response (Term is lower)")
+			Debug("Skip Wrong Raft-Success Response (Term is lower)")
 		p.mu.Unlock()
 		return
 	}
@@ -386,12 +385,9 @@ func (p *PaxosElection) handleSuccessResponse(resp *pb.PaxosSuccessRequest) {
 	if !p.isCandidate || p.currentTerm != resp.Term || !resp.Success {
 		log.WithField("node-id", p.config.Id).
 			WithField("term", resp.Term).
-			Debug("Skip Wrong Paxos-Success Response")
+			Debug("Skip Wrong Raft-Success Response")
 		p.mu.Unlock()
 		return
-	}
-	if p.successRequests[p.currentTerm] == nil {
-		p.successRequests[p.currentTerm] = make(map[string]*pb.PaxosSuccessRequest)
 	}
 	p.successRequests[p.currentTerm][resp.AcceptorId] = resp
 	p.mu.Unlock()
@@ -428,7 +424,7 @@ func (p *PaxosElection) handleSuccessResponse(resp *pb.PaxosSuccessRequest) {
 }
 
 // // handleStatusRequest processes election status requests
-// func (p *PaxosElection) handleStatusRequest(req *pb.ElectionStatusRequest) {
+// func (p *RaftElection) handleStatusRequest(req *pb.ElectionStatusRequest) {
 // 	response := &pb.ElectionStatusResponse{
 // 		CurrentTerm:   p.currentTerm,
 // 		CurrentLeader: p.currentLeader,
@@ -441,7 +437,7 @@ func (p *PaxosElection) handleSuccessResponse(resp *pb.PaxosSuccessRequest) {
 // }
 
 // startElection initiates a new election round
-func (p *PaxosElection) startElection() {
+func (p *RaftElection) startElection() {
 	p.mu.Lock()
 	p.currentTerm++
 	p.isLeader = false
@@ -453,11 +449,11 @@ func (p *PaxosElection) startElection() {
 		Info("Starting new election")
 
 	// Send Prepare requests
-	p.startPreparePhase()
+	p.startRaftPreparePhase()
 }
 
 // startPreparePhase initiates the Prepare phase
-func (p *PaxosElection) startPreparePhase() {
+func (p *RaftElection) startRaftPreparePhase() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -465,7 +461,7 @@ func (p *PaxosElection) startPreparePhase() {
 	p.isLeader = false
 	p.proposalId = p.generateProposalId()
 
-	request := &pb.PaxosPrepareRequest{
+	request := &pb.RaftPrepareRequest{
 		Term:       p.currentTerm,
 		ProposalId: p.proposalId,
 		ProposerId: p.config.Id,
@@ -473,11 +469,11 @@ func (p *PaxosElection) startPreparePhase() {
 		Timestamp:  time.Now().Unix(),
 	}
 
-	p.sender.Broadcast("paxos-prepare", request)
+	p.sender.Broadcast("raft-prepare", request)
 }
 
 // runElectionTimer handles election timeouts
-func (p *PaxosElection) runElectionManager() {
+func (p *RaftElection) runElectionManager() {
 	for {
 		select {
 		case <-p.NewLeaderCh:
@@ -492,24 +488,24 @@ func (p *PaxosElection) runElectionManager() {
 }
 
 // generateProposalId creates a unique proposal ID
-func (p *PaxosElection) generateProposalId() int64 {
+func (p *RaftElection) generateProposalId() int64 {
 	return time.Now().UnixNano() + int64(len(p.config.PeersAddress))
 }
 
 // getMajority returns the number of nodes needed for majority
-func (p *PaxosElection) getMajority() int {
+func (p *RaftElection) getMajority() int {
 	return len(p.config.PeersAddress)/2 + 1
 }
 
 // getNodeState returns the current state of this node
-func (p *PaxosElection) getNodeState() string {
+func (p *RaftElection) getNodeState() string {
 	if p.isLeader {
 		return "leader"
 	}
 	return "follower"
 }
 
-func (p *PaxosElection) FindLeaderForView(viewId int64, callbackCh chan string) {
+func (p *RaftElection) FindLeaderForView(viewId int64, callbackCh chan string) {
 	// If we already know the leader for this view, return immediately
 	if p.currentViewLeader != "" && p.currentView == viewId {
 		callbackCh <- p.currentViewLeader
@@ -524,34 +520,34 @@ func (p *PaxosElection) FindLeaderForView(viewId int64, callbackCh chan string) 
 		case leader := <-p.NewLeaderCh:
 			callbackCh <- leader
 		case <-time.After(p.electionTimeout):
-			callbackCh <- "timeout"
+			callbackCh <- ""
 		}
 	}()
 }
 
-func (p *PaxosElection) GetCurrentLeader() string {
+func (p *RaftElection) GetCurrentLeader() string {
 	return p.currentViewLeader
 }
 
-func (p *PaxosElection) IsLeader() bool {
+func (p *RaftElection) IsLeader() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.isLeader
 }
 
-func (p *PaxosElection) HandleMessage(msg proto.Message) error {
+func (p *RaftElection) HandleMessage(msg proto.Message) error {
 	// This method is called by external components to handle messages
 	p.handleMessage(msg)
 	return nil
 }
 
-func (p *PaxosElection) Serve() error {
+func (p *RaftElection) Serve() error {
 	return p.Start()
 }
 
-// Start begins the Paxos election process
-func (p *PaxosElection) Start() error {
-	log.WithField("node-id", p.config.Id).Info("Starting Paxos election")
+// Start begins the Raft election process
+func (p *RaftElection) Start() error {
+	log.WithField("node-id", p.config.Id).Info("Starting Raft election")
 
 	// Start message handler loop
 	go p.runMessageHandler()
@@ -562,9 +558,9 @@ func (p *PaxosElection) Start() error {
 	return nil
 }
 
-// Stop halts the Paxos election process
-func (p *PaxosElection) Stop() error {
-	log.WithField("node-id", p.config.Id).Info("Stopping Paxos election")
+// Stop halts the Raft election process
+func (p *RaftElection) Stop() error {
+	log.WithField("node-id", p.config.Id).Info("Stopping Raft election")
 	p.stopCh <- struct{}{}
 	return nil
 }

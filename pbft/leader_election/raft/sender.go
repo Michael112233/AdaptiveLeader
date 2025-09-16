@@ -1,4 +1,4 @@
-package paxos
+package raft
 
 import (
 	"context"
@@ -22,8 +22,8 @@ type Sender struct {
 }
 
 // proto:
-// PaxosClient
-// NewPaxosClient
+// RaftElectionClient
+// NewRaftElectionClient
 
 func NewSender(config *configs.Config) *Sender {
 	return &Sender{
@@ -33,13 +33,13 @@ func NewSender(config *configs.Config) *Sender {
 	}
 }
 
-func (s *Sender) getClient(id string) (pb.PaxosElectionClient, error) {
+func (s *Sender) getClient(id string) (pb.RaftElectionClient, error) {
 	// 1 Check Whether Connection Exists, if so, return the client
 	s.mu.RLock()
 	conn, ok := s.conns[id]
 	s.mu.RUnlock()
 	if ok {
-		return pb.NewPaxosElectionClient(conn), nil
+		return pb.NewRaftElectionClient(conn), nil
 	}
 
 	// 2 If Not, Establish Connection
@@ -49,7 +49,7 @@ func (s *Sender) getClient(id string) (pb.PaxosElectionClient, error) {
 	// 2.1 Double Check Whether Connection Exists
 	// As in Execution Interval, Other Threads might have established the connection, so we need to check again
 	if conn, ok = s.conns[id]; ok {
-		return pb.NewPaxosElectionClient(conn), nil
+		return pb.NewRaftElectionClient(conn), nil
 	}
 
 	// 2.2 Establish Connection
@@ -85,10 +85,10 @@ func (s *Sender) getClient(id string) (pb.PaxosElectionClient, error) {
 		Info("Successfully connected to peer")
 
 	s.conns[id] = conn
-	return pb.NewPaxosElectionClient(conn), nil
+	return pb.NewRaftElectionClient(conn), nil
 }
 
-func (s *Sender) SendPaxosPrepare(targetId string, req *pb.PaxosPrepareRequest) error {
+func (s *Sender) SendRaftPrepare(targetId string, req *pb.RaftPrepareRequest) error {
 	client, err := s.getClient(targetId)
 	if err != nil {
 		return err
@@ -97,17 +97,17 @@ func (s *Sender) SendPaxosPrepare(targetId string, req *pb.PaxosPrepareRequest) 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	_, err = client.PaxosPrepare(ctx, req)
+	_, err = client.RaftPrepare(ctx, req)
 	if err != nil {
-		log.WithError(err).WithField("target", targetId).Error("failed to send paxos-prepare request")
-		monitoring.ErrorCounter.WithLabelValues("paxos-prepare", "SendPaxosPrepare", "grpc_error").Inc()
+		log.WithError(err).WithField("target", targetId).Error("failed to send raft-prepare request")
+		monitoring.ErrorCounter.WithLabelValues("raft-prepare", "SendRaftPrepare", "grpc_error").Inc()
 		return err
 	}
 
 	return nil
 }
 
-func (s *Sender) SendPaxosAccept(targetId string, req *pb.PaxosAcceptRequest) error {
+func (s *Sender) SendRaftAccept(targetId string, req *pb.RaftAcceptRequest) error {
 	client, err := s.getClient(targetId)
 	if err != nil {
 		return err
@@ -116,17 +116,17 @@ func (s *Sender) SendPaxosAccept(targetId string, req *pb.PaxosAcceptRequest) er
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	_, err = client.PaxosAccept(ctx, req)
+	_, err = client.RaftAccept(ctx, req)
 	if err != nil {
-		log.WithError(err).WithField("target", targetId).Error("failed to send paxos-accept request")
-		monitoring.ErrorCounter.WithLabelValues("paxos-accept", "SendPaxosAccept", "grpc_error").Inc()
+		log.WithError(err).WithField("target", targetId).Error("failed to send raft-accept request")
+		monitoring.ErrorCounter.WithLabelValues("raft-accept", "SendRaftAccept", "grpc_error").Inc()
 		return err
 	}
 
 	return nil
 }
 
-func (s *Sender) SendPaxosSuccess(targetId string, req *pb.PaxosSuccessRequest) error {
+func (s *Sender) SendRaftSuccess(targetId string, req *pb.RaftSuccessRequest) error {
 	client, err := s.getClient(targetId)
 	if err != nil {
 		return err
@@ -135,17 +135,17 @@ func (s *Sender) SendPaxosSuccess(targetId string, req *pb.PaxosSuccessRequest) 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	_, err = client.PaxosSuccess(ctx, req)
+	_, err = client.RaftSuccess(ctx, req)
 	if err != nil {
-		log.WithError(err).WithField("target", targetId).Error("failed to send paxos-success request")
-		monitoring.ErrorCounter.WithLabelValues("paxos-success", "SendPaxosSuccess", "grpc_error").Inc()
+		log.WithError(err).WithField("target", targetId).Error("failed to send raft-success request")
+		monitoring.ErrorCounter.WithLabelValues("raft-success", "SendRaftSuccess", "grpc_error").Inc()
 		return err
 	}
 
 	return nil
 }
 
-func (s *Sender) SendPaxosPromise(targetId string, req *pb.PaxosPromiseRequest) error {
+func (s *Sender) SendRaftPromise(targetId string, req *pb.RaftPromiseRequest) error {
 	client, err := s.getClient(targetId)
 	if err != nil {
 		return err
@@ -154,10 +154,10 @@ func (s *Sender) SendPaxosPromise(targetId string, req *pb.PaxosPromiseRequest) 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	_, err = client.PaxosPromise(ctx, req)
+	_, err = client.RaftPromise(ctx, req)
 	if err != nil {
-		log.WithError(err).WithField("target", targetId).Error("failed to send paxos-promise request")
-		monitoring.ErrorCounter.WithLabelValues("paxos-promise", "SendPaxosPromise", "grpc_error").Inc()
+		log.WithError(err).WithField("target", targetId).Error("failed to send raft-promise request")
+		monitoring.ErrorCounter.WithLabelValues("raft-promise", "SendRaftPromise", "grpc_error").Inc()
 		return err
 	}
 
@@ -170,10 +170,10 @@ func (s *Sender) Broadcast(msgType string, message proto.Message) error {
 			continue
 		}
 		switch msgType {
-		case "paxos-prepare":
-			s.SendPaxosPrepare(replicaId, message.(*pb.PaxosPrepareRequest))
-		case "paxos-accept":
-			s.SendPaxosAccept(replicaId, message.(*pb.PaxosAcceptRequest))
+		case "raft-prepare":
+			s.SendRaftPrepare(replicaId, message.(*pb.RaftPrepareRequest))
+		case "raft-accept":
+			s.SendRaftAccept(replicaId, message.(*pb.RaftAcceptRequest))
 		default:
 			return fmt.Errorf("invalid message type: %s", msgType)
 		}
@@ -183,14 +183,14 @@ func (s *Sender) Broadcast(msgType string, message proto.Message) error {
 
 func (s *Sender) SendRPCToPeer(id string, msgType string, message proto.Message) error {
 	switch msgType {
-	case "paxos-prepare":
-		s.SendPaxosPrepare(id, message.(*pb.PaxosPrepareRequest))
-	case "paxos-promise":
-		s.SendPaxosPromise(id, message.(*pb.PaxosPromiseRequest))
-	case "paxos-accept":
-		s.SendPaxosAccept(id, message.(*pb.PaxosAcceptRequest))
-	case "paxos-success":
-		s.SendPaxosSuccess(id, message.(*pb.PaxosSuccessRequest))
+	case "raft-prepare":
+		s.SendRaftPrepare(id, message.(*pb.RaftPrepareRequest))
+	case "raft-promise":
+		s.SendRaftPromise(id, message.(*pb.RaftPromiseRequest))
+	case "raft-accept":
+		s.SendRaftAccept(id, message.(*pb.RaftAcceptRequest))
+	case "raft-success":
+		s.SendRaftSuccess(id, message.(*pb.RaftSuccessRequest))
 	default:
 		return fmt.Errorf("invalid message type: %s", msgType)
 	}

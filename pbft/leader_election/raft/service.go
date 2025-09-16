@@ -1,4 +1,4 @@
-package paxos
+package raft
 
 import (
 	"context"
@@ -22,17 +22,17 @@ type Service struct {
 
 	Enabled bool
 
-	paxosCh    chan<- proto.Message
+	raftCh     chan<- proto.Message
 	listener   net.Listener
 	grpcServer *grpc.Server
 
-	pb.UnimplementedPaxosElectionServer
+	pb.UnimplementedRaftElectionServer
 }
 
-func NewService(paxosCh chan<- proto.Message, config *configs.Config) *Service {
+func NewService(raftCh chan<- proto.Message, config *configs.Config) *Service {
 	service := &Service{
 		config:  config,
-		paxosCh: paxosCh,
+		raftCh:  raftCh,
 		Enabled: config.General.EnabledByDefault,
 	}
 
@@ -43,13 +43,13 @@ func NewService(paxosCh chan<- proto.Message, config *configs.Config) *Service {
 	}
 
 	service.grpcServer = grpc.NewServer()
-	pb.RegisterPaxosElectionServer(service.grpcServer, service)
+	pb.RegisterRaftElectionServer(service.grpcServer, service)
 
 	return service
 }
 
 // PaxosPrepare handles incoming Prepare requests from other nodes
-func (s *Service) PaxosPrepare(_ context.Context, req *pb.PaxosPrepareRequest) (*pb.Empty, error) {
+func (s *Service) RaftPrepare(_ context.Context, req *pb.RaftPrepareRequest) (*pb.Empty, error) {
 	if !s.Enabled {
 		return &pb.Empty{}, nil
 	}
@@ -61,14 +61,14 @@ func (s *Service) PaxosPrepare(_ context.Context, req *pb.PaxosPrepareRequest) (
 		Debug("paxos prepare request received")
 
 	// Forward the request to the election logic
-	s.paxosCh <- req
-	monitoring.MessageCounter.WithLabelValues(req.GetProposerId(), s.config.Id, "paxos-prepare").Inc()
+	s.raftCh <- req
+	monitoring.MessageCounter.WithLabelValues(req.GetProposerId(), s.config.Id, "raft-prepare").Inc()
 
 	return &pb.Empty{}, nil
 }
 
 // PaxosPromise handles incoming Promise requests from other nodes
-func (s *Service) PaxosPromise(_ context.Context, req *pb.PaxosPromiseRequest) (*pb.Empty, error) {
+func (s *Service) RaftPromise(_ context.Context, req *pb.RaftPromiseRequest) (*pb.Empty, error) {
 	if !s.Enabled {
 		return &pb.Empty{}, nil
 	}
@@ -77,17 +77,17 @@ func (s *Service) PaxosPromise(_ context.Context, req *pb.PaxosPromiseRequest) (
 		WithField("term", req.Term).
 		WithField("promised", req.Promised).
 		WithField("acceptor-id", req.AcceptorId).
-		Debug("paxos promise request received")
+		Debug("raft promise request received")
 
 	// Forward the request to the election logic
-	s.paxosCh <- req
-	monitoring.MessageCounter.WithLabelValues(req.GetAcceptorId(), s.config.Id, "paxos-promise").Inc()
+	s.raftCh <- req
+	monitoring.MessageCounter.WithLabelValues(req.GetAcceptorId(), s.config.Id, "raft-promise").Inc()
 
 	return &pb.Empty{}, nil
 }
 
 // PaxosAccept handles incoming Accept requests from other nodes
-func (s *Service) PaxosAccept(_ context.Context, req *pb.PaxosAcceptRequest) (*pb.Empty, error) {
+func (s *Service) RaftAccept(_ context.Context, req *pb.RaftAcceptRequest) (*pb.Empty, error) {
 	if !s.Enabled {
 		return &pb.Empty{}, nil
 	}
@@ -97,17 +97,17 @@ func (s *Service) PaxosAccept(_ context.Context, req *pb.PaxosAcceptRequest) (*p
 		WithField("proposal-id", req.ProposalId).
 		WithField("proposer-id", req.ProposerId).
 		WithField("proposed-value", req.ProposedValue).
-		Debug("paxos accept request received")
+		Debug("raft accept request received")
 
 	// Forward the request to the election logic
-	s.paxosCh <- req
-	monitoring.MessageCounter.WithLabelValues(req.GetProposerId(), s.config.Id, "paxos-accept").Inc()
+	s.raftCh <- req
+	monitoring.MessageCounter.WithLabelValues(req.GetProposerId(), s.config.Id, "raft-accept").Inc()
 
 	return &pb.Empty{}, nil
 }
 
 // PaxosSuccess handles incoming Success requests from other nodes
-func (s *Service) PaxosSuccess(_ context.Context, req *pb.PaxosSuccessRequest) (*pb.Empty, error) {
+func (s *Service) RaftSuccess(_ context.Context, req *pb.RaftSuccessRequest) (*pb.Empty, error) {
 	if !s.Enabled {
 		return &pb.Empty{}, nil
 	}
@@ -116,11 +116,11 @@ func (s *Service) PaxosSuccess(_ context.Context, req *pb.PaxosSuccessRequest) (
 		WithField("term", req.Term).
 		WithField("success", req.Success).
 		WithField("acceptor-id", req.AcceptorId).
-		Debug("paxos success request received")
+		Debug("raft success request received")
 
 	// Forward the request to the election logic
-	s.paxosCh <- req
-	monitoring.MessageCounter.WithLabelValues(req.GetAcceptorId(), s.config.Id, "paxos-success").Inc()
+	s.raftCh <- req
+	monitoring.MessageCounter.WithLabelValues(req.GetAcceptorId(), s.config.Id, "raft-success").Inc()
 
 	return &pb.Empty{}, nil
 }
@@ -141,19 +141,19 @@ func (s *Service) GetElectionStatus(_ context.Context, req *pb.ElectionStatusReq
 // Enable enables the election service
 func (s *Service) Enable(_ context.Context, _ *pb.Empty) (*pb.Empty, error) {
 	s.Enabled = true
-	log.WithField("my-id", s.config.Id).Info("paxos election service enabled")
+	log.WithField("my-id", s.config.Id).Info("raft election service enabled")
 	return &pb.Empty{}, nil
 }
 
 // Disable disables the election service
 func (s *Service) Disable(_ context.Context, _ *pb.Empty) (*pb.Empty, error) {
 	s.Enabled = false
-	log.WithField("my-id", s.config.Id).Info("paxos election service disabled")
+	log.WithField("my-id", s.config.Id).Info("raft election service disabled")
 	return &pb.Empty{}, nil
 }
 
 func (s *Service) Serve() {
-	log.WithFields(log.Fields{"host": s.config.Address.Host, "port": s.config.Address.Port + 2000}).Printf("Starting paxos election gRPC server...")
+	log.WithFields(log.Fields{"host": s.config.Address.Host, "port": s.config.Address.Port + 2000}).Printf("Starting raft election gRPC server...")
 	if err := s.grpcServer.Serve(s.listener); err != nil {
 		log.WithError(err).Fatal("failed to serve")
 	}
@@ -162,6 +162,6 @@ func (s *Service) Serve() {
 func (s *Service) Stop() {
 	s.grpcServer.GracefulStop()
 	s.listener.Close()
-	close(s.paxosCh) // Maybe Not Needed
-	log.Info("paxos service stopped")
+	close(s.raftCh) // Maybe Not Needed
+	log.Info("raft service stopped")
 }

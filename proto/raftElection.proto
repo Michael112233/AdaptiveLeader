@@ -7,14 +7,14 @@ import "general.proto";
 import "electionGeneral.proto";
 
 // ==================== gRPC Service Definition ====================
-service PaxosElection {
+service RaftElection {
     // Prepare Phase
-    rpc PaxosPrepare(PaxosPrepareRequest) returns (Empty);
-    rpc PaxosPromise(PaxosPromiseRequest) returns (Empty);
+    rpc RaftPrepare(RaftPrepareRequest) returns (Empty);
+    rpc RaftPromise(RaftPromiseRequest) returns (Empty);
 
     // Accept Phase
-    rpc PaxosAccept(PaxosAcceptRequest) returns (Empty);
-    rpc PaxosSuccess(PaxosSuccessRequest) returns (Empty);
+    rpc RaftAccept(RaftAcceptRequest) returns (Empty);
+    rpc RaftSuccess(RaftSuccessRequest) returns (Empty);
 
     // Status and Control
     rpc GetElectionStatus(ElectionStatusRequest) returns (Empty);
@@ -23,7 +23,7 @@ service PaxosElection {
 }
 
 // ==================== gRPC Message Definition ====================
-message PaxosPrepareRequest {
+message RaftPrepareRequest {
     int64 term = 1;                    // Current term number
     int64 proposal_id = 2;             // Unique proposal identifier
     string proposer_id = 3;            // ID of the proposing node
@@ -32,7 +32,7 @@ message PaxosPrepareRequest {
     int64 timestamp = 6;               // Timestamp for timeout handling
 }
 
-message PaxosPromiseRequest {
+message RaftPromiseRequest {
     int64 term = 1;                    // Current term number
     bool promised = 2;                 // Whether the prepare is accepted
     string acceptor_id = 3;            // ID of the accepting node
@@ -42,7 +42,7 @@ message PaxosPromiseRequest {
     int64 timestamp = 7;               // Timestamp
 }
 
-message PaxosAcceptRequest {
+message RaftAcceptRequest {
     int64 term = 1;                    // Current term number
     int64 proposal_id = 2;             // Proposal identifier
     string proposer_id = 3;            // ID of the proposing node
@@ -51,12 +51,11 @@ message PaxosAcceptRequest {
     int64 timestamp = 6;               // Timestamp
 }
 
-message PaxosSuccessRequest {
+message RaftSuccessRequest {
     int64 term = 1;                    // Current term number
     bool success = 2;                  // Whether the accept is successful
     string acceptor_id = 3;            // ID of the accepting node
     int64 view_id = 4;                 // View ID
     int64 timestamp = 5;               // Timestamp
 }
-
 

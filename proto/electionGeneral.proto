@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package pbft;
+option go_package = ".";
+
+import "general.proto";
+
+// ==================== Election Common Types ====================
+
+// ElectionStatusRequest is used to request election status from a node
+message ElectionStatusRequest {
+    string node_id = 1;                // Node ID requesting status
+}
+
+// ElectionStatusResponse contains the current election status
+message ElectionStatusResponse {
+    string current_leader = 1;         // Current leader ID
+    int64 current_term = 2;            // Current term number
+    bool is_leader = 3;                // Whether this node is the leader
+    int64 last_heartbeat = 4;          // Last heartbeat timestamp
+    repeated string active_nodes = 5;   // List of active nodes
+}
+
+// ElectionConfig contains configuration for election algorithms
+message ElectionConfig {
+    int64 election_timeout = 1;        // Election timeout in milliseconds
+    int64 heartbeat_interval = 2;      // Heartbeat interval in milliseconds
+    int64 max_retries = 3;             // Maximum retry attempts
+    bool enable_logging = 4;           // Enable detailed logging
+}
+
+// NodeInfo contains information about a node in the election
+message NodeInfo {
+    string node_id = 1;                // Unique node identifier
+    string address = 2;                // Node network address
+    int64 last_seen = 3;               // Last time this node was seen
+    bool is_active = 4;                // Whether the node is currently active
+    int64 priority = 5;                // Node priority for leader election
+}
