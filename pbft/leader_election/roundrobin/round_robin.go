@@ -29,6 +29,7 @@ func (r *RoundRobin) GetLeader(viewId int64) string {
 	return r.peerIds[viewId%int64(len(r.peerIds))]
 }
 
+// For testing
 func (r *RoundRobin) FindLeaderForView(viewId int64, callbackCh chan string) {
 	callbackCh <- r.peerIds[viewId%int64(len(r.peerIds))]
 }

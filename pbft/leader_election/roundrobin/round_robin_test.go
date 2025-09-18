@@ -16,6 +16,8 @@ func TestPaxos_SuccessfulElection(t *testing.T) {
 	nodeIds := make([]string, 0)
 	configStructs := make([]*configs.Config, 0)
 	roundRobinElections := make([]*RoundRobin, 0)
+	
+	// Define network structure
 	for i := range nodeCount {
 		nodeIds = append(nodeIds, fmt.Sprintf("node_%d", i+1))
 		configStructs = append(configStructs, &configs.Config{

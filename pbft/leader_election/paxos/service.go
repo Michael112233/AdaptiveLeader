@@ -20,6 +20,7 @@ import (
 type Service struct {
 	config *configs.Config
 
+	// Enabled is a flag to indicate whether the message service is enabled
 	Enabled bool
 
 	paxosCh    chan<- proto.Message
@@ -29,6 +30,9 @@ type Service struct {
 	pb.UnimplementedPaxosElectionServer
 }
 
+// NewService creates a new Paxos election service
+// paxosch is the channel for paxos messages
+// config is the configuration for the service
 func NewService(paxosCh chan<- proto.Message, config *configs.Config) *Service {
 	service := &Service{
 		config:  config,
