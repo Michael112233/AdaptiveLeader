@@ -1,10 +1,14 @@
 package carousal
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/golang/mock/gomock"
+)
 
 func TestCarousal_SuccessfulElection(t *testing.T) {
 	const nodeCount = 4
-	
+
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -14,3 +18,4 @@ func TestCarousal_SuccessfulElection(t *testing.T) {
 		nodes[i].EXPECT().GetCurrentView().Return(int64(1)).AnyTimes()
 		nodes[i].EXPECT().GetCurrentBlock().Return(&Block{}).AnyTimes()
 	}
+}
